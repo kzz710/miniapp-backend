@@ -43,8 +43,8 @@ nano /opt/miniapp-backend/.env
 ```
 LLM_PROVIDER=doubao
 DOUBAO_API_KEY=ark-你的真实key
-DOUBAO_MODEL=doubao-seed-2-1-pro-260915
-DOUBAO_BASE_URL=https://ark.cn-beijing.volces.com
+DOUBAO_MODEL=doubao-seed-2-1-pro-260915        # 方舟按量模型；Agent Plan 套餐改用 doubao-seed-2.1-lite
+DOUBAO_BASE_URL=https://ark.cn-beijing.volces.com/api/v3   # 方舟按量；Agent Plan 套餐改为 /api/plan/v3
 CACHE_TTL=86400
 ```
 > 切勿把 .env 提交 git（.gitignore 已忽略）。
@@ -86,13 +86,79 @@ curl http://<公网IP>:8000/api/queryCarPrice -H "Content-Type: application/json
 - 返回 JSON 即全链路通（含豆包联网取价）。**验证完建议关掉 8000 端口**，对外只留 80/443。
 
 ## 步骤 5：H5 部署（同源，免跨域）
-本地构建并上传：
+
+H5 走同源相对路径 `/api`（见前端 `src/config.ts`），由 nginx 反代到本机 8000，因此**无需单独配 CORS**；但要求 nginx 同时托管静态文件并反代 `/api`。
+
+### 5.1 本地构建
 ```bash
 cd miniapp-frontend
-npm run build:h5
-scp -r dist/build/h5 root@<公网IP>:/opt/miniapp-h5
+npm install            # 仅首次
+npm run build:h5       # 产物输出到 dist/build/h5
 ```
-nginx 已配置 `root /opt/miniapp-h5`，浏览器开 `https://你的域名.com` 即为 H5。
+
+### 5.2 上传到服务器
+服务器先建目录：
+```bash
+mkdir -p /opt/miniapp-h5
+```
+本地（Git Bash / PowerShell 均可）上传：
+```powershell
+scp -r dist/build/h5/. root@<公网IP>:/opt/miniapp-h5/
+```
+> 更新 H5 时重复这条即可覆盖；若担心旧文件残留，先 `rm -rf /opt/miniapp-h5 && mkdir -p /opt/miniapp-h5` 再传。
+
+### 5.3 nginx 配置（⭐ 备案前用精简版）
+仓库 `deploy/nginx/miniapp.conf` 含 `listen 443 ssl` + 证书路径，**没证书时 `nginx -t` 会失败**。备案前用下面纯 HTTP 版（IP 可访问 + `/api` 反代后端）：
+
+```nginx
+server {
+    listen 80 default_server;
+    server_name _;
+
+    root /opt/miniapp-h5;
+    index index.html;
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+写入并启用（SSH）：
+```bash
+cat > /etc/nginx/sites-available/miniapp <<'EOF'
+server {
+    listen 80 default_server;
+    server_name _;
+    root /opt/miniapp-h5;
+    index index.html;
+    location / { try_files $uri $uri/ /index.html; }
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+EOF
+ln -sfn /etc/nginx/sites-available/miniapp /etc/nginx/sites-enabled/miniapp
+rm -f /etc/nginx/sites-enabled/default        # 避免和默认站点抢 80/default_server
+nginx -t && systemctl reload nginx
+```
+
+### 5.4 防火墙 + 验证
+1. 轻量控制台「防火墙」放通 **80** 端口。
+2. **后端必须 running**（H5 查价走 `/api` 反代到本机 8000）：`systemctl restart miniapp`。
+3. 浏览器开 `http://<公网IP>` 能看到 H5 页面；试查一辆车能返回车型价 = 全链路通（http 浏览器提示"不安全"，备案前忽略）。
+
+### 5.5 备案通过后切换
+把仓库 `deploy/nginx/miniapp.conf`（完整版：443 + 证书 + 80→443 跳转）覆盖回去，申请腾讯云免费 DV 证书传到 `/etc/nginx/ssl/`，把 `server_name` 改成你的域名，再 `nginx -t && systemctl reload nginx`，之后用 `https://域名.com` 访问。
 
 ## 步骤 6：微信小程序（备案通过后）
 1. 把 `src/config.ts` 的 `PROD_DOMAIN` 改成 `https://你的域名.com`；
