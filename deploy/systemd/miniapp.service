@@ -1,0 +1,15 @@
+[Unit]
+Description=Miniapp Backend (FastAPI + gunicorn)
+After=network.target
+
+[Service]
+User=root
+WorkingDirectory=/opt/miniapp-backend
+# venv 的 gunicorn 绝对路径（确保开机自启时 PATH 正确）
+Environment="PATH=/opt/miniapp-backend/.venv/bin"
+ExecStart=/opt/miniapp-backend/.venv/bin/gunicorn -k uvicorn.workers.UvicornWorker -w 2 -b 127.0.0.1:8000 app.main:app
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

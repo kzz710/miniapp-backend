@@ -1,0 +1,4 @@
+# 生产部署依赖（仅服务器 Linux 使用，Windows 本地无需安装）
+# 用途：gunicorn 作为生产 WSGI/ASGI 服务器管理 uvicorn worker，替代开发期裸跑 uvicorn。
+# 部署时：pip install -r requirements.txt && pip install -r requirements-prod.txt
+gunicorn>=21.2.0
