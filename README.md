@@ -89,6 +89,49 @@ taskkill /PID 12345 /F
 | `Address already in use` | 8000 被旧进程占着 | 见上方 `taskkill` 步骤 |
 | 启动后立即退出 / 报错 | 多为 `.env` 缺失或 key 为空、依赖未装齐 | 检查 `.env` 与 `pip install -r requirements.txt` |
 
+## 服务器（远程 Linux）启动与重启
+
+生产用 gunicorn + systemd 守护（完整部署见 `deploy/DEPLOY.md`）。以下假设服务名 `miniapp`、项目目录 `/opt/miniapp-backend`、虚拟环境 `.venv`。
+
+### 首次启动（做成开机自启服务）
+先手动验证 gunicorn 能起，再做成 systemd 服务：
+```bash
+cd /opt/miniapp-backend
+source .venv/bin/activate
+gunicorn -k uvicorn.workers.UvicornWorker -w 2 -b 127.0.0.1:8000 app.main:app   # 能起就 Ctrl+C
+
+# 复制仓库自带模板并启用开机自启 + 立即启动
+cp deploy/systemd/miniapp.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now miniapp
+systemctl status miniapp --no-pager    # 看到 active(running) 即成功
+```
+
+### 改代码 / 改 .env 后重启
+```bash
+systemctl restart miniapp               # 重载新代码与 .env（.env 启动时读，必须重启才生效）
+systemctl status miniapp --no-pager     # 确认 active(running)
+journalctl -u miniapp -n 30 --no-pager  # 看最近日志，确认无启动报错
+```
+
+### 查看状态与日志
+```bash
+systemctl status miniapp --no-pager     # 服务状态
+journalctl -u miniapp -f                # 实时跟踪日志（Ctrl+C 退出）
+```
+
+### 没做成 systemd 服务（手动 gunicorn 前台跑的）
+```bash
+cd /opt/miniapp-backend && source .venv/bin/activate
+gunicorn -k uvicorn.workers.UvicornWorker -w 2 -b 127.0.0.1:8000 app.main:app
+```
+> 若 `systemctl status miniapp` 报 `Unit miniapp.service not found`，说明当时没做上面的"首次启动"，先按首次启动步骤补齐即可。
+
+### 前端 H5 / nginx 改动无需重启后端
+改了 H5 静态文件只需重新构建并 scp 覆盖 `/opt/miniapp-h5`，再 `nginx -t && systemctl reload nginx`；后端与 nginx 配置未变则无需重启 `miniapp`。
+
+---
+
 ## 核心接口
 
 - `POST /api/queryCarPrice`  `{ "keyword": "比亚迪 海豹" }` → 车价（缓存→实时RAG→示例库兜底）
