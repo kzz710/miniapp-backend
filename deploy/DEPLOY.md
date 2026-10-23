@@ -105,52 +105,24 @@ mkdir -p /opt/miniapp-h5
 ```powershell
 scp -r dist/build/h5/. root@<公网IP>:/opt/miniapp-h5/
 ```
+服务器  
+```bash
+nginx -t && systemctl reload nginx  
+```
 > 更新 H5 时重复这条即可覆盖；若担心旧文件残留，先 `rm -rf /opt/miniapp-h5 && mkdir -p /opt/miniapp-h5` 再传。
 
-### 5.3 nginx 配置（⭐ 备案前用精简版）
-仓库 `deploy/nginx/miniapp.conf` 含 `listen 443 ssl` + 证书路径，**没证书时 `nginx -t` 会失败**。备案前用下面纯 HTTP 版（IP 可访问 + `/api` 反代后端）：
+### 5.3 nginx 配置（⭐ 备案前用精简版，无域名也能跑）
+**⚠️ 关键：没有域名 / 备案没通过，千万别用 `miniapp.conf`**（它含 443 + 证书路径，`nginx -t` 会因证书不存在而失败，且 80 强制跳 HTTPS 会让 IP 也打不开）。
 
-```nginx
-server {
-    listen 80 default_server;
-    server_name _;
+直接用仓库里准备好的纯 HTTP 模板 `deploy/nginx/miniapp-http-only.conf`（已含 `/api` 反代 + `/tools/` 静态路径，用 `server_name _` 匹配任意 IP）：
 
-    root /opt/miniapp-h5;
-    index index.html;
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-    location /api/ {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
-写入并启用（SSH）：
 ```bash
-cat > /etc/nginx/sites-available/miniapp <<'EOF'
-server {
-    listen 80 default_server;
-    server_name _;
-    root /opt/miniapp-h5;
-    index index.html;
-    location / { try_files $uri $uri/ /index.html; }
-    location /api/ {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-EOF
+cp /opt/miniapp-backend/deploy/nginx/miniapp-http-only.conf /etc/nginx/sites-available/miniapp
 ln -sfn /etc/nginx/sites-available/miniapp /etc/nginx/sites-enabled/miniapp
 rm -f /etc/nginx/sites-enabled/default        # 避免和默认站点抢 80/default_server
 nginx -t && systemctl reload nginx
 ```
+> 此模板无需域名、无需证书，`http://<公网IP>` 直接可用。等域名 + 备案 + SSL 证书齐全后，再按 5.5 换回 `miniapp.conf`。
 
 ### 5.4 防火墙 + 验证
 1. 轻量控制台「防火墙」放通 **80** 端口。
@@ -166,6 +138,48 @@ nginx -t && systemctl reload nginx
 3. 微信开发者工具导入 `dist/build/mp-weixin` → 上传；
 4. mp.weixin.qq.com → 开发设置 → **服务器域名 → request 合法域名** 加 `https://你的域名.com`；
 5. 提交审核 → 发布。
+
+---
+
+## 步骤 7：mytools 静态工具部署（纯静态，可选）
+
+「空间」里的 `mytools` 是一组**纯静态 H5 小工具**（CSS/JS 全内嵌，无构建、无后端、无 Node），例如 `createWXscheme`（微信小程序跳转链接生成器）。部署 = 上传文件 + nginx 一条静态路径，比 miniapp H5 更简单，且与主站**复用同一域名 / 证书 / 端口**。
+
+### 7.1 上传工具文件
+服务器建目录：
+```bash
+mkdir -p /opt/mytools
+```
+本地（工作区）上传整个 mytools 目录：
+```powershell
+scp -r D:/workspace/myself/mytools/. root@<公网IP>:/opt/mytools/
+```
+> 导航页 `mytools/index.html` 与工具 `mytools/createWXscheme/index.html` 一并上传；以后新增工具，只需在 `/opt/mytools/` 下建子目录放 `index.html`，并到导航页加一张卡片即可（模板注释已给出示例）。
+
+### 7.2 nginx 配置（已并入模板）
+仓库 `deploy/nginx/miniapp.conf`（HTTPS 完整版）与步骤 5.3 备案前精简版都已包含：
+```nginx
+location /tools/ {
+    alias /opt/mytools/;
+    index index.html;
+}
+```
+- 访问 `https://域名.com/tools/` → 工具集合导航页
+- 访问 `https://域名.com/tools/createWXscheme/` → 具体工具
+> `alias` 与 `location` 末尾的 `/` 都必须带，否则路径拼接 404。改完执行 `nginx -t && systemctl reload nginx`。
+
+### 7.3 ⚠️ 重要：复制功能依赖 HTTPS
+`createWXscheme` 的「复制链接」用的是 `navigator.clipboard`，只在 **HTTPS 或 localhost** 安全上下文生效；否则走 `execCommand` 兜底，手机浏览器基本已失效。**因此该工具务必在备案后通过 `https://域名.com/tools/...` 访问**；备案前用 `http://IP/tools/...` 打开页面正常，但手机微信里点「复制」可能失灵。
+
+### 7.4 本地预览（验证复制功能）
+```bash
+cd D:/workspace/myself/mytools
+python -m http.server 8080
+# 浏览器开 http://localhost:8080/  → localhost 属安全上下文，复制可用
+```
+
+### 7.5 文件已硬编码默认值
+`createWXscheme/index.html` 内写死了默认 `appid` / `path` / `query`。部署到公网后任何人可见——确认这些是要公开的内容；如需改动，直接编辑该 HTML 后重新 scp 覆盖。
 
 ---
 

@@ -93,6 +93,47 @@ taskkill /PID 12345 /F
 
 生产用 gunicorn + systemd 守护（完整部署见 `deploy/DEPLOY.md`）。以下假设服务名 `miniapp`、项目目录 `/opt/miniapp-backend`、虚拟环境 `.venv`。
 
+### 0. 从本地连接远程服务器
+
+在**本地终端**（Windows 的 PowerShell / CMD / Git Bash，或 Mac/Linux 终端）执行：
+
+```bash
+# 基础 SSH 登录（将 81.70.149.19 换成你的服务器公网 IP；当前项目即 81.70.149.19）
+ssh root@81.70.149.19
+```
+- 首次连接会提示 `Are you sure you want to continue connecting (yes/no/[fingerprint])?`，输入 `yes` 回车即可（只需确认一次）。
+- 之后输入服务器 `root` 用户密码（或配置密钥免密）。
+- 登录成功后提示符变成 `root@VM-...:/#`，**此后所有命令都在服务器上执行**；想回到本地输入 `exit` 回车。
+
+**指定 SSH 端口（若改过默认 22）**
+```bash
+ssh -p <端口号> root@81.70.149.19      # 注意 ssh 端口是小写 -p
+```
+
+**使用密钥文件登录（免密码）**
+```bash
+ssh -i ~/.ssh/id_rsa root@81.70.149.19
+```
+
+**用 scp 上传 / 下载文件（仍在本地终端执行，不是服务器里）**
+```bash
+# 上传单个文件到服务器 /opt 目录
+scp /本地/路径/file root@81.70.149.19:/opt/
+
+# 上传整个目录（如 H5 构建产物、后端代码），-r 表示递归；末尾 /. 表示目录内容
+scp -r /本地/路径/dist/build/h5/. root@81.70.149.19:/opt/miniapp-h5/
+
+# 指定端口时用大写 -P（与 ssh 的 -p 不同，别搞混）
+scp -P <端口号> -r /本地/目录 root@81.70.149.19:/opt/
+
+# 从服务器下载文件到本地
+scp root@81.70.149.19:/opt/miniapp-backend/.env /本地/路径/
+```
+> ⚠️ scp 的端口参数是**大写 `-P`**，ssh 的是小写 `-p`，极易混。
+
+**服务器直连 GitHub 拉代码失败的替代**
+服务器连 GitHub 常报 `GnuTLS recv error (-110)`（网络被 reset）或 `Permission denied (publickey)`（SSH 未配）。绕过方式：本地 `scp` 直传代码、或用国内镜像 `https://gitclone.com/github.com/...`。完整排查见 `deploy/DEPLOY.md`（服务器拉 GitHub 失败）。
+
 ### 首次启动（做成开机自启服务）
 先手动验证 gunicorn 能起，再做成 systemd 服务：
 ```bash
