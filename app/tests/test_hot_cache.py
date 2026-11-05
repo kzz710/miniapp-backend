@@ -51,7 +51,7 @@ def test_hot_keywords_normalizes_whitespace():
 def test_price_cache_persists_after_memory_clear(monkeypatch):
     calls = {"count": 0}
 
-    async def fake_live(_keyword: str):
+    async def fake_live(_keyword: str, timeout: int = 50):
         calls["count"] += 1
         return [_car("标准版"), _car("高配版")]
 

@@ -15,6 +15,7 @@ async def get_car_price(
     keyword: str,
     db: Session,
     force_refresh: bool = False,
+    live_timeout: int = 50,
 ) -> CarPriceResult:
     """查询车型价格，按 内存缓存 -> DB 缓存 -> 实时 -> 示例库 顺序降级。
 
@@ -43,7 +44,7 @@ async def get_car_price(
 
     # 3) 实时检索增强（仅在配置了 key 时），返回全部版本
     if config.live_mode():
-        cars: list[CarPrice] = await fetch_live_prices(kw) or []
+        cars: list[CarPrice] = await fetch_live_prices(kw, timeout=live_timeout) or []
         cars = [c for c in cars if validate_price(c)]
         if cars:
             cache.set(kw, cars, ttl=config.CACHE_TTL)

@@ -9,6 +9,6 @@ WorkingDirectory=/opt/miniapp-backend
 Environment="PATH=/opt/miniapp-backend/.venv/bin"
 Environment="PYTHONUNBUFFERED=1"
 EnvironmentFile=/etc/miniapp/miniapp.env
-# 5 个车型联网取价约 2~4 分钟，留足超时
-TimeoutStartSec=600
+# 5 个车型联网取价，单个最长 120s，留足超时
+TimeoutStartSec=900
 ExecStart=/opt/miniapp-backend/.venv/bin/python -m app.scripts.warm_cache

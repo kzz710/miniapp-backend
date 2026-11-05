@@ -50,10 +50,14 @@ _EXTRACT_PROMPT = (
 )
 
 
-async def fetch_live_prices(keyword: str) -> list[CarPrice]:
-    """统一入口：按 LLM_PROVIDER 分派，返回该车型全部版本（可能为空）。"""
+async def fetch_live_prices(keyword: str, timeout: int = 50) -> list[CarPrice]:
+    """统一入口：按 LLM_PROVIDER 分派，返回该车型全部版本（可能为空）。
+
+    timeout 仅对豆包通道生效：线上查询保持 50s（早于前端 60s 收口），
+    后台预热可传更大值（如 120s）以提升成功率。
+    """
     if config.LLM_PROVIDER == "doubao":
-        return await doubao_rag(keyword)
+        return await doubao_rag(keyword, timeout=timeout)
     return await deepseek_rag(keyword)
 
 
@@ -308,7 +312,7 @@ def _extract_text_from_responses(data: dict) -> str:
     return "\n".join(texts)
 
 
-async def doubao_rag(keyword: str) -> list[CarPrice]:
+async def doubao_rag(keyword: str, timeout: int = 50) -> list[CarPrice]:
     """豆包（火山方舟 Responses API）内置 web_search 联网搜索 + 抽取。
 
     注意：方舟原生 web_search 工具要求
@@ -342,8 +346,8 @@ async def doubao_rag(keyword: str) -> list[CarPrice]:
         ],
     }
     data = None
-    # 小程序端 uni.request 默认 60s 超时，这里提前收口，保证能返回示例库兜底
-    async with httpx.AsyncClient(timeout=50) as client:
+    # 线上查询默认 50s（早于小程序端 60s 收口）；后台预热可传更大值
+    async with httpx.AsyncClient(timeout=timeout) as client:
         for attempt in range(2):
             try:
                 resp = await client.post(

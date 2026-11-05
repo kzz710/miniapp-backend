@@ -21,8 +21,11 @@ async def main() -> None:
         ok = 0
         for keyword in keywords:
             try:
-                # 强制刷新，避免命中旧缓存导致“预热”实际没更新
-                result = await get_car_price(keyword, db, force_refresh=True)
+                # 强制刷新，避免命中旧缓存导致“预热”实际没更新；
+                # 预热是后台任务，超时放宽到 120s，比线上查询更容易拿到结果
+                result = await get_car_price(
+                    keyword, db, force_refresh=True, live_timeout=120
+                )
                 print(
                     f"[warm] {keyword} -> {result.source} / {len(result.options)} 个版本",
                     flush=True,
