@@ -1,7 +1,10 @@
 """车价查询编排：内存缓存 -> 数据库缓存 -> 实时 RAG -> 示例库兜底。"""
+import asyncio
+
 from sqlalchemy.orm import Session
 
 from app import config
+from app.db.session import SessionLocal
 from app.services.llm import fetch_live_prices
 from app.services.price_cache import get_cached, set_cached
 from app.services.sample_cars import find_sample
@@ -67,3 +70,33 @@ async def get_car_price(
         )
 
     return CarPriceResult(data=None, options=[], source="none", note="未找到该车型，请尝试更具体的品牌+车型，如「比亚迪 海豹」")
+
+
+# 后台刷新：本次查询超时/未命中时，用更长超时继续取价并写入缓存。
+# 这样用户下次查询同一车型即可直接命中，不必每次都等 50 秒。
+_refreshing: set[str] = set()
+_refresh_tasks: set[asyncio.Task] = set()
+
+
+async def refresh_cache_in_background(keyword: str) -> None:
+    kw = normalize_keyword(keyword)
+    if not kw or kw in _refreshing:
+        return
+
+    _refreshing.add(kw)
+    db = SessionLocal()
+    try:
+        # 后台不受小程序 60s 限制，给足时间；成功后自动写内存 + DB 缓存
+        await get_car_price(kw, db, force_refresh=True, live_timeout=180)
+    except Exception:
+        pass
+    finally:
+        db.close()
+        _refreshing.discard(kw)
+
+
+def schedule_refresh(keyword: str) -> None:
+    """把关键词放进后台刷新队列，不阻塞当前请求。"""
+    task = asyncio.create_task(refresh_cache_in_background(keyword))
+    _refresh_tasks.add(task)
+    task.add_done_callback(_refresh_tasks.discard)

@@ -1,4 +1,6 @@
 """热门车型统计与车价持久化缓存测试。"""
+import asyncio
+
 from fastapi.testclient import TestClient
 
 from app import config as app_config
@@ -69,3 +71,20 @@ def test_price_cache_persists_after_memory_clear(monkeypatch):
     assert second.json()["source"] == "cache"
     assert len(second.json()["options"]) == 2
     assert calls["count"] == 1
+
+
+def test_background_refresh_writes_cache(monkeypatch, session_factory):
+    async def fake_live(_keyword: str, timeout: int = 180):
+        return [_car("标准版")]
+
+    monkeypatch.setattr(cp, "fetch_live_prices", fake_live)
+    monkeypatch.setattr(app_config, "live_mode", lambda: True)
+    monkeypatch.setattr(cp, "SessionLocal", session_factory)
+
+    # 模拟“本次查询超时”，后台任务用更长超时补取并写缓存
+    asyncio.run(cp.refresh_cache_in_background("后台刷新车"))
+    cache.clear()
+
+    hit = client.post("/api/queryCarPrice", json={"keyword": "后台刷新车"})
+    assert hit.json()["source"] == "cache"
+    assert len(hit.json()["options"]) == 1

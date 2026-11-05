@@ -43,3 +43,9 @@ def clean_db():
     Base.metadata.create_all(bind=engine)
     cache.clear()
     yield
+
+
+@pytest.fixture
+def session_factory():
+    """供需要自行开 session 的服务（如后台刷新）在测试中替换使用。"""
+    return TestingSessionLocal

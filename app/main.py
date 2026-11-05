@@ -13,7 +13,7 @@ from app.api import auth as auth_api
 from app.api import posts as posts_api
 from app.db.session import get_db, init_db
 from app.engine import run_plan
-from app.services.car_price import get_car_price
+from app.services.car_price import get_car_price, schedule_refresh
 from app.services.search_stats import HOT_LIMIT, hot_keywords, record_search
 from app.types import CalcParams, CalcResult, CarPriceResult
 
@@ -105,7 +105,12 @@ async def query_car_price(body: dict, db: Session = Depends(get_db)) -> CarPrice
         record_search(db, keyword)
     except Exception:
         db.rollback()
-    return await get_car_price(keyword, db)
+
+    result = await get_car_price(keyword, db)
+    # 本次没拿到实时价（超时/未收录）时，后台继续取价并写缓存，下次查询即可秒回
+    if config.live_mode() and result.source in ("sample", "none"):
+        schedule_refresh(keyword)
+    return result
 
 
 @app.get("/api/hotKeywords")
