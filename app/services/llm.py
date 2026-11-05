@@ -270,17 +270,26 @@ async def doubao_rag(keyword: str) -> list[CarPrice]:
             }
         ],
     }
-    try:
-        # 小程序端 uni.request 默认 60s 超时，这里提前收口，保证能返回示例库兜底
-        async with httpx.AsyncClient(timeout=50) as client:
-            resp = await client.post(
-                f"{config.DOUBAO_BASE_URL}/responses",
-                headers={
-                    "Authorization": f"Bearer {config.DOUBAO_API_KEY}",
-                    "Content-Type": "application/json",
-                },
-                json=payload,
-            )
+    data = None
+    # 小程序端 uni.request 默认 60s 超时，这里提前收口，保证能返回示例库兜底
+    async with httpx.AsyncClient(timeout=50) as client:
+        for attempt in range(2):
+            try:
+                resp = await client.post(
+                    f"{config.DOUBAO_BASE_URL}/responses",
+                    headers={
+                        "Authorization": f"Bearer {config.DOUBAO_API_KEY}",
+                        "Content-Type": "application/json",
+                    },
+                    json=payload,
+                )
+            except Exception as e:
+                print(f"[doubao] 请求异常：{type(e).__name__}: {e}", flush=True)
+                return None
+            # 5xx 为方舟侧偶发错误，快速重试一次；4xx（鉴权/参数）重试无意义
+            if resp.status_code >= 500 and attempt == 0:
+                print(f"[doubao] 上游 {resp.status_code}，重试一次", flush=True)
+                continue
             if resp.status_code >= 400:
                 # 把方舟返回的错误码/信息打出来，便于定位（未开通模型 / 未开通联网插件等）
                 try:
@@ -292,9 +301,10 @@ async def doubao_rag(keyword: str) -> list[CarPrice]:
                 print(f"[doubao] 请求失败 HTTP {resp.status_code} | code={code} | {msg}", flush=True)
                 return []
             data = resp.json()
-    except Exception as e:
-        print(f"[doubao] 请求异常：{type(e).__name__}: {e}", flush=True)
-        return None
+            break
+
+    if data is None:
+        return []
 
     text = _extract_text_from_responses(data)
     if not text:
