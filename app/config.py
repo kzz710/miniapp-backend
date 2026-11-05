@@ -5,65 +5,80 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
+def _env(name: str, default: str = "") -> str:
+    """读取字符串配置并去除首尾空白。
+
+    Windows 上编辑/复制得到的 env 文件常带 CRLF，systemd EnvironmentFile 会把 \\r
+    原样注入，导致 API Key 变成 "ark-xxxx\\r" 并报 key format is incorrect。
+    """
+    return os.getenv(name, default).strip()
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = _env(name, "")
+    return int(raw) if raw else default
+
+
 # LLM 后端：deepseek 或 doubao。
 # - deepseek：OpenAI 兼容 chat/completions，需配合外部搜索源（Bocha/Tavily）。
 # - doubao  ：火山引擎方舟 Responses API，内置 web_search 联网搜索，只需一个 key。
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "deepseek").lower()
+LLM_PROVIDER = _env("LLM_PROVIDER", "deepseek").lower()
 
 # DeepSeek（OpenAI 兼容接口），LLM_PROVIDER=deepseek 时使用
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
-DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
-DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+DEEPSEEK_API_KEY = _env("DEEPSEEK_API_KEY")
+DEEPSEEK_BASE_URL = _env("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+DEEPSEEK_MODEL = _env("DEEPSEEK_MODEL", "deepseek-chat")
 
 # 豆包（火山引擎方舟 Responses API，内置联网搜索），LLM_PROVIDER=doubao 时使用
 # DOUBAO_API_KEY 即方舟控制台获取的 ARK_API_KEY
-DOUBAO_API_KEY = os.getenv("DOUBAO_API_KEY", "")
-DOUBAO_BASE_URL = os.getenv("DOUBAO_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")
+DOUBAO_API_KEY = _env("DOUBAO_API_KEY")
+DOUBAO_BASE_URL = _env("DOUBAO_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")
 # 默认模型同时支持工具调用与联网搜索；可在方舟控制台替换为指定推理接入点或版本
-DOUBAO_MODEL = os.getenv("DOUBAO_MODEL", "doubao-seed-1.6-250615")
+DOUBAO_MODEL = _env("DOUBAO_MODEL", "doubao-seed-1.6-250615")
 
 # 搜索源（仅 LLM_PROVIDER=deepseek 时用于 RAG 检索增强）。
 # - bocha : 博查 Web Search API（国内服务，推荐，降低海外依赖）
 # - tavily: Tavily Search API（海外，备选）
 # - mock  : 内置离线片段（默认，无 key 也能跑通，但非实时）
-SEARCH_PROVIDER = os.getenv("SEARCH_PROVIDER", "mock").lower()
-BOCHA_API_KEY = os.getenv("BOCHA_API_KEY", "")
-TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
+SEARCH_PROVIDER = _env("SEARCH_PROVIDER", "mock").lower()
+BOCHA_API_KEY = _env("BOCHA_API_KEY")
+TAVILY_API_KEY = _env("TAVILY_API_KEY")
 
 # 车价缓存 TTL（秒），默认 24 小时
-CACHE_TTL = int(os.getenv("CACHE_TTL", "86400"))
+CACHE_TTL = _env_int("CACHE_TTL", 86400)
 
 # 服务端口
-PORT = int(os.getenv("PORT", "8000"))
+PORT = _env_int("PORT", 8000)
 
 # 安全月供占可支配收入比例（默认 30%，可在此或请求参数调整）
 DEFAULT_SAFE_RATIO = 0.3
 
 # ---------------- 用户系统 ----------------
 # 微信小程序登录（code2session）。未配置时仅 mock 登录可用。
-WX_APPID = os.getenv("WX_APPID", "")
-WX_SECRET = os.getenv("WX_SECRET", "")
+WX_APPID = _env("WX_APPID")
+WX_SECRET = _env("WX_SECRET")
 # 本地开发：true 时不做真实 code2session，便于联调。
 # mock 模式默认用 code 派生 openid（H5 用固定 device id，可复用同一账号）；
 # 小程序 wx.login 的 code 每次都不同，若想让本地始终登录同一账号，可设置 WX_MOCK_OPENID。
-WX_MOCK_LOGIN = os.getenv("WX_MOCK_LOGIN", "false").lower() == "true"
-WX_MOCK_OPENID = os.getenv("WX_MOCK_OPENID", "")
+WX_MOCK_LOGIN = _env("WX_MOCK_LOGIN", "false").lower() == "true"
+WX_MOCK_OPENID = _env("WX_MOCK_OPENID")
 
 # JWT 签名密钥（生产必须替换为随机值；启动时会校验是否仍为默认值）
 DEFAULT_JWT_SECRET = "dev-only-change-me-in-production"
-JWT_SECRET = os.getenv("JWT_SECRET", DEFAULT_JWT_SECRET)
+JWT_SECRET = _env("JWT_SECRET", DEFAULT_JWT_SECRET)
 JWT_ALGORITHM = "HS256"
-TOKEN_TTL_DAYS = int(os.getenv("TOKEN_TTL_DAYS", "30"))
+TOKEN_TTL_DAYS = _env_int("TOKEN_TTL_DAYS", 30)
 
 # 数据库连接串。默认 SQLite 文件，生产建议替换为 MySQL/PostgreSQL。
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./data/app.db")
+DATABASE_URL = _env("DATABASE_URL", "sqlite:///./data/app.db")
 
 # 发布 / 审批每日上限（按北京时间自然日计算）
-POST_DAILY_LIMIT = int(os.getenv("POST_DAILY_LIMIT", "5"))
-REVIEW_DAILY_LIMIT = int(os.getenv("REVIEW_DAILY_LIMIT", "20"))
+POST_DAILY_LIMIT = _env_int("POST_DAILY_LIMIT", 5)
+REVIEW_DAILY_LIMIT = _env_int("REVIEW_DAILY_LIMIT", 20)
 
 # 登录接口限流（同一 IP 每分钟次数），0 表示不限制
-LOGIN_RATE_LIMIT_PER_MINUTE = int(os.getenv("LOGIN_RATE_LIMIT_PER_MINUTE", "20"))
+LOGIN_RATE_LIMIT_PER_MINUTE = _env_int("LOGIN_RATE_LIMIT_PER_MINUTE", 20)
 
 
 def _llm_has_key() -> bool:
