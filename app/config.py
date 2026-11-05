@@ -39,6 +39,32 @@ PORT = int(os.getenv("PORT", "8000"))
 # 安全月供占可支配收入比例（默认 30%，可在此或请求参数调整）
 DEFAULT_SAFE_RATIO = 0.3
 
+# ---------------- 用户系统 ----------------
+# 微信小程序登录（code2session）。未配置时仅 mock 登录可用。
+WX_APPID = os.getenv("WX_APPID", "")
+WX_SECRET = os.getenv("WX_SECRET", "")
+# 本地开发：true 时不做真实 code2session，便于联调。
+# mock 模式默认用 code 派生 openid（H5 用固定 device id，可复用同一账号）；
+# 小程序 wx.login 的 code 每次都不同，若想让本地始终登录同一账号，可设置 WX_MOCK_OPENID。
+WX_MOCK_LOGIN = os.getenv("WX_MOCK_LOGIN", "false").lower() == "true"
+WX_MOCK_OPENID = os.getenv("WX_MOCK_OPENID", "")
+
+# JWT 签名密钥（生产必须替换为随机值；启动时会校验是否仍为默认值）
+DEFAULT_JWT_SECRET = "dev-only-change-me-in-production"
+JWT_SECRET = os.getenv("JWT_SECRET", DEFAULT_JWT_SECRET)
+JWT_ALGORITHM = "HS256"
+TOKEN_TTL_DAYS = int(os.getenv("TOKEN_TTL_DAYS", "30"))
+
+# 数据库连接串。默认 SQLite 文件，生产建议替换为 MySQL/PostgreSQL。
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./data/app.db")
+
+# 发布 / 审批每日上限（按北京时间自然日计算）
+POST_DAILY_LIMIT = int(os.getenv("POST_DAILY_LIMIT", "5"))
+REVIEW_DAILY_LIMIT = int(os.getenv("REVIEW_DAILY_LIMIT", "20"))
+
+# 登录接口限流（同一 IP 每分钟次数），0 表示不限制
+LOGIN_RATE_LIMIT_PER_MINUTE = int(os.getenv("LOGIN_RATE_LIMIT_PER_MINUTE", "20"))
+
 
 def _llm_has_key() -> bool:
     if LLM_PROVIDER == "doubao":

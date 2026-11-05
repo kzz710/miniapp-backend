@@ -7,7 +7,10 @@ User=root
 WorkingDirectory=/opt/miniapp-backend
 # venv 的 gunicorn 绝对路径（确保开机自启时 PATH 正确）
 Environment="PATH=/opt/miniapp-backend/.venv/bin"
-ExecStart=/opt/miniapp-backend/.venv/bin/gunicorn -k uvicorn.workers.UvicornWorker -w 2 -b 127.0.0.1:8000 app.main:app
+# 密钥文件放在项目目录之外，仅 root 可读（chmod 600），避免随代码一起被提交/打包
+EnvironmentFile=/etc/miniapp/miniapp.env
+# 使用 SQLite 时请保持 -w 1（多 worker 会争抢写锁）；切换 MySQL 后可调回 -w 2
+ExecStart=/opt/miniapp-backend/.venv/bin/gunicorn -k uvicorn.workers.UvicornWorker -w 1 -b 127.0.0.1:8000 app.main:app
 Restart=always
 RestartSec=3
 

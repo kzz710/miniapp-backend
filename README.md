@@ -139,7 +139,7 @@ scp root@81.70.149.19:/opt/miniapp-backend/.env /本地/路径/
 ```bash
 cd /opt/miniapp-backend
 source .venv/bin/activate
-gunicorn -k uvicorn.workers.UvicornWorker -w 2 -b 127.0.0.1:8000 app.main:app   # 能起就 Ctrl+C
+gunicorn -k uvicorn.workers.UvicornWorker -w 1 -b 127.0.0.1:8000 app.main:app   # 能起就 Ctrl+C（SQLite 需 -w 1）
 
 # 复制仓库自带模板并启用开机自启 + 立即启动
 cp deploy/systemd/miniapp.service /etc/systemd/system/
@@ -164,8 +164,9 @@ journalctl -u miniapp -f                # 实时跟踪日志（Ctrl+C 退出）
 ### 没做成 systemd 服务（手动 gunicorn 前台跑的）
 ```bash
 cd /opt/miniapp-backend && source .venv/bin/activate
-gunicorn -k uvicorn.workers.UvicornWorker -w 2 -b 127.0.0.1:8000 app.main:app
+gunicorn -k uvicorn.workers.UvicornWorker -w 1 -b 127.0.0.1:8000 app.main:app
 ```
+> 注意：使用 SQLite（默认）时必须 **-w 1**，多 worker 会争抢写锁报 `database is locked`；切换到 MySQL 后可调回 `-w 2`。
 > 若 `systemctl status miniapp` 报 `Unit miniapp.service not found`，说明当时没做上面的"首次启动"，先按首次启动步骤补齐即可。
 
 ### 前端 H5 / nginx 改动无需重启后端
@@ -177,6 +178,52 @@ gunicorn -k uvicorn.workers.UvicornWorker -w 2 -b 127.0.0.1:8000 app.main:app
 
 - `POST /api/queryCarPrice`  `{ "keyword": "比亚迪 海豹" }` → 车价（缓存→实时RAG→示例库兜底）
 - `POST /api/calcPlan`  `CalcParams` → 测算结果 + 结论（买买买 / 理性考虑 / 买个 der）
+
+## 用户系统 / 广场 / 审批
+
+微信静默登录后自动分配用户名（`车友XXXXXX`）与文字头像（用户名首字 + 稳定底色），
+用户可发布买车计划到广场，其他用户可按三档给出审批与意见。
+
+| 接口 | 鉴权 | 说明 |
+|---|---|---|
+| `POST /api/auth/login` | 否 | 小程序：`{code}` → `{token, expires_in, user}` |
+| `POST /api/auth/login/h5` | 否 | H5：`{device_id}` → 同上（浏览器端无微信身份，用设备标识建档） |
+| `GET /api/users/me` | 是 | 当前用户信息 |
+| `PATCH /api/users/me` | 是 | 修改用户名（2~16 字符，唯一；头像随首字更新） |
+| `GET /api/me/summary` | 是 | 我的发布数 / 收到审批数 |
+| `GET /api/me/posts` | 是 | 我的发布（分页） |
+| `POST /api/posts` | 是 | 发布计划（服务端用 `run_plan` 重算，不信任前端结论） |
+| `GET /api/posts` | 否 | 广场列表（`sort=latest\|hot`，分页） |
+| `GET /api/posts/{id}` | 否 | 详情（含 `my_review` / `is_mine`） |
+| `DELETE /api/posts/{id}` | 是 | 软删除，仅本人 |
+| `POST /api/posts/{id}/reviews` | 是 | 提交审批（三档 + 10~200 字意见） |
+| `PUT /api/posts/{id}/reviews/me` | 是 | 修改自己的审批 |
+| `GET /api/posts/{id}/reviews` | 否 | 审批列表（分页） |
+
+关键点：
+- 财务数据（收入/支出/储蓄）默认不公开，仅发布者本人可见；发布时可勾选公开。
+- 每个用户对同一条发布只能有一条审批，修改不会重复计数（并发重复提交会按「修改」幂等处理）。
+- 不能审批自己的发布；发布与审批均有每日上限（`POST_DAILY_LIMIT` / `REVIEW_DAILY_LIMIT`），
+  按**北京时间自然日**计算，且发布额度包含当天已删除的记录（删了再发不会重置额度）。
+- 登录接口按客户端 IP 限流（`LOGIN_RATE_LIMIT_PER_MINUTE`，默认 20 次/分钟）。
+
+相关环境变量（见 `.env.example`）：`WX_APPID` / `WX_SECRET`（微信登录，未配置时降级 mock 模式，仅限开发；
+mock 模式下可设 `WX_MOCK_OPENID` 固定账号，否则小程序端每次登录都会新建用户）、
+`JWT_SECRET`（生产必须随机，**仍为默认值且已配置微信凭据时服务会拒绝启动**）、`TOKEN_TTL_DAYS`、
+`LOGIN_RATE_LIMIT_PER_MINUTE`、`DATABASE_URL`（默认 SQLite `./data/app.db`）。
+
+> 数据库：默认 SQLite，适合单机小流量；**使用 SQLite 时 gunicorn 必须 `-w 1`**。
+> 生产建议切换 MySQL（`DATABASE_URL=mysql+pymysql://...`，需额外安装 `pymysql`）后恢复多 worker。
+> MVP 用 `create_all` 建表，后续可引入 Alembic 做版本化迁移。
+
+### 密钥管理
+
+- `.env` 已被 `.gitignore` 忽略（同时忽略 `.env.*`，仅保留 `.env.example` 模板），**不要提交任何真实密钥**。
+- `WX_APPID` 会随小程序包公开，可提交；**`WX_SECRET`、`JWT_SECRET`、各类 API Key 属于机密**，只能写进 `.env`。
+- 生产环境把真实配置放在项目目录之外：`/etc/miniapp/miniapp.env`（`chmod 600`），
+  由 systemd `EnvironmentFile` 注入；项目目录内不要放 `.env`。
+- 一旦密钥误入版本历史：先到微信公众平台重置 AppSecret / 轮换 API Key，再清理 git 历史
+  （`git filter-repo`），仅删除文件不足以消除泄露。
 
 ## LLM 后端与检索源
 

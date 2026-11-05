@@ -8,6 +8,9 @@ from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.staticfiles import StaticFiles
 
 from app import config
+from app.api import auth as auth_api
+from app.api import posts as posts_api
+from app.db.session import init_db
 from app.engine import run_plan
 from app.services.car_price import get_car_price
 from app.types import CalcParams, CalcResult, CarPriceResult
@@ -15,10 +18,27 @@ from app.types import CalcParams, CalcResult, CarPriceResult
 _STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
 @asynccontextmanager
+def _check_secrets() -> None:
+    """默认密钥可用于本地开发，但绝不允许带进生产。"""
+    if config.JWT_SECRET != config.DEFAULT_JWT_SECRET:
+        return
+    if config.WX_MOCK_LOGIN or not (config.WX_APPID and config.WX_SECRET):
+        print("[警告] JWT_SECRET 仍为默认值，仅限本地开发；生产必须配置随机密钥")
+        return
+    raise RuntimeError(
+        "JWT_SECRET 仍为默认值，拒绝启动：请配置随机密钥（如 openssl rand -hex 32）"
+    )
+
+
 async def lifespan(app: FastAPI):
+    _check_secrets()
     print(f"[启动] LLM 来源：{config.llm_label()}")
     if config.LLM_PROVIDER == "deepseek":
         print(f"[启动] 检索来源(搜索)：{config.search_label()}")
+    if config.WX_MOCK_LOGIN or not (config.WX_APPID and config.WX_SECRET):
+        print("[启动] 微信登录：mock 模式（生产环境请配置 WX_APPID / WX_SECRET）")
+    init_db()
+    print(f"[启动] 数据库：{config.DATABASE_URL}")
     yield
 
 
@@ -81,6 +101,11 @@ async def query_car_price(body: dict) -> CarPriceResult:
 async def calc_plan(params: CalcParams) -> CalcResult:
     """费用测算 + 可负担性评估（纯函数，确定性计算结果）。"""
     return run_plan(params)
+
+
+# 用户系统 / 广场 / 审批
+app.include_router(auth_api.router)
+app.include_router(posts_api.router)
 
 
 if __name__ == "__main__":

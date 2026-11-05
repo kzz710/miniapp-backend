@@ -35,26 +35,45 @@ pip install -r requirements-prod.txt   # 含 gunicorn
 ```
 **方式 B：本地 scp 整个目录**（`.env` / `.venv` 不会跟着传，正好）
 
-**手动建 .env（最关键，服务器上没有）**
+**建生产密钥文件（最关键，服务器上没有）**
+
+生产环境**不要**把密钥放在项目目录里，统一放到 `/etc/miniapp/miniapp.env`，
+由 systemd 的 `EnvironmentFile` 注入，权限 600，避免随代码被提交、打包或备份带走：
+
 ```bash
-nano /opt/miniapp-backend/.env
+mkdir -p /etc/miniapp
+nano /etc/miniapp/miniapp.env
+chmod 600 /etc/miniapp/miniapp.env
 ```
-内容（照本地 .env 填，关键是真实 DOUBAO_API_KEY + 模型名）：
+
+内容（systemd EnvironmentFile 不支持行尾注释，注释请单独成行）：
 ```
 LLM_PROVIDER=doubao
 DOUBAO_API_KEY=ark-你的真实key
-DOUBAO_MODEL=doubao-seed-2-1-pro-260915        # 方舟按量模型；Agent Plan 套餐改用 doubao-seed-2.1-lite
-DOUBAO_BASE_URL=https://ark.cn-beijing.volces.com/api/v3   # 方舟按量；Agent Plan 套餐改为 /api/plan/v3
+DOUBAO_MODEL=doubao-seed-2-1-pro-260915
+DOUBAO_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
 CACHE_TTL=86400
+
+# 用户系统（广场 / 我的发布 / 审批）
+WX_APPID=wx你的小程序appid
+WX_SECRET=你的小程序secret
+WX_MOCK_LOGIN=false
+JWT_SECRET=换成随机串
+LOGIN_RATE_LIMIT_PER_MINUTE=20
+DATABASE_URL=sqlite:///./data/app.db
 ```
-> 切勿把 .env 提交 git（.gitignore 已忽略）。
+> 绝不能把密钥写进 `.env.example`、源码、README 或任何会被提交的文件；
+> 项目目录内只保留 `.env.example` 模板。若曾把真实密钥写进受版本控制的文件，请立刻在
+> 微信公众平台「开发管理 → 开发设置」重置 AppSecret，并清理 git 历史。
+> 未配置 `WX_APPID`/`WX_SECRET` 时登录会降级为 mock 模式，生产环境务必配置。
+> 使用默认 SQLite 时请保持 gunicorn `-w 1`；切到 MySQL 需 `pip install pymysql` 后再调回 `-w 2`。
 
 ## 步骤 3：gunicorn + systemd 守护（开机自启）
 先用 gunicorn 手动验证能起，再做成服务：
 ```bash
 cd /opt/miniapp-backend
 source .venv/bin/activate
-gunicorn -k uvicorn.workers.UvicornWorker -w 2 -b 127.0.0.1:8000 app.main:app
+gunicorn -k uvicorn.workers.UvicornWorker -w 1 -b 127.0.0.1:8000 app.main:app
 # 能起就 Ctrl+C
 ```
 做成开机自启服务（本仓库已附模板，按实际路径微调）：
@@ -64,7 +83,8 @@ systemctl daemon-reload
 systemctl enable --now miniapp
 systemctl status miniapp     # 看到 active(running) 即成功
 ```
-> `-w 2` 是 worker 数，2 核机器够用；路径按实际部署目录调整。
+> `-w 1` 是 worker 数：默认 SQLite 只支持单写者，多 worker 会报 `database is locked`；
+> 若把 `DATABASE_URL` 切到 MySQL，可调回 `-w 2`。路径按实际部署目录调整。
 
 ## 步骤 4：nginx 反代 + 域名解析 + HTTPS（⭐ 备案通过后做）
 1. **域名解析**：DNSPod 加 A 记录 `@` 和 `www` 指向服务器公网 IP（若购机时勾了"一键配置域名解析"已自动完成，去控制台确认）。
