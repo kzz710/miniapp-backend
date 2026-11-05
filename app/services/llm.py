@@ -41,7 +41,7 @@ _EXTRACT_PROMPT = (
     "规则："
     "1) energy_type 必须按版本实际动力类型判断：纯电→ev，纯油→gas，插混/油混→hybrid；"
     "电车 fuel_consumption=0、power_consumption 填百公里电耗(kWh/100km)，油车相反，混动两者都填（油耗时填 L/100km）。"
-    "2) 若用户仅给品牌+车型（如「比亚迪 海豹」）未指定具体版本，列出该车型在售主要版本（最多 4 个）；"
+    "2) 若用户仅给品牌+车型（如「比亚迪 海豹」）未指定具体版本，列出该车型在售主要版本（最多 3 个）；"
     "若已指定具体版本，则只返回该版本（单个元素）。"
     "3) guide_price 为指导价(万元)，ref_discount_price 为参考优惠价/终端价(万元)；查不到优惠价可等于指导价。"
     "4) 仅输出 JSON，不要任何解释文字。"
@@ -256,8 +256,8 @@ async def doubao_rag(keyword: str) -> list[CarPrice]:
         "stream": False,
         # 多版本价格 JSON 较长，输出上限过小会把 JSON 截断导致解析失败
         "max_output_tokens": 8192,
-        # 搜索轮次过多会显著拉长响应时间，3 轮足够覆盖主流车型
-        "tools": [{"type": "web_search", "max_keyword": 3}],
+        # 搜索轮次过多会显著拉长响应时间，2 轮可覆盖主流车型
+        "tools": [{"type": "web_search", "max_keyword": 2}],
         "input": [
             {
                 "role": "user",
@@ -271,7 +271,8 @@ async def doubao_rag(keyword: str) -> list[CarPrice]:
         ],
     }
     try:
-        async with httpx.AsyncClient(timeout=60) as client:
+        # 小程序端 uni.request 默认 60s 超时，这里提前收口，保证能返回示例库兜底
+        async with httpx.AsyncClient(timeout=50) as client:
             resp = await client.post(
                 f"{config.DOUBAO_BASE_URL}/responses",
                 headers={
