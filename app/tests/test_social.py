@@ -1,46 +1,10 @@
 """用户 / 发布 / 审批接口测试（内存 SQLite，不依赖网络）。"""
-import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
-import app.db.models  # noqa: F401
 from app import config as app_config
-from app.db.base import Base
-from app.db.session import get_db
 from app.main import app
 
-# 测试中关闭登录限流（所有用例共用同一个 TestClient IP，避免相互影响）
-app_config.LOGIN_RATE_LIMIT_PER_MINUTE = 0
-
-engine = create_engine(
-    "sqlite://",
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
-)
-TestingSessionLocal = sessionmaker(
-    bind=engine, autoflush=False, autocommit=False, expire_on_commit=False
-)
-
-
-def override_get_db():
-    db = TestingSessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
-app.dependency_overrides[get_db] = override_get_db
 client = TestClient(app)
-
-
-@pytest.fixture(autouse=True)
-def clean_db():
-    Base.metadata.drop_all(bind=engine)
-    Base.metadata.create_all(bind=engine)
-    yield
 
 
 def login(code: str) -> tuple[dict, dict]:

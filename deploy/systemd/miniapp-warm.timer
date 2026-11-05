@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily warm car price cache
+
+[Timer]
+# 每天 05:00 预热，避开访问高峰；Persistent 保证关机错过后会补跑
+OnCalendar=*-*-* 05:00:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

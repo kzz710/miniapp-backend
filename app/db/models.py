@@ -78,6 +78,27 @@ class CarPost(Base):
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
 
 
+class SearchStat(Base):
+    """关键词搜索次数统计，用于计算热门车型。"""
+
+    __tablename__ = "search_stats"
+
+    keyword: Mapped[str] = mapped_column(String(64), primary_key=True)
+    count: Mapped[int] = mapped_column(default=0)
+    last_searched_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class PriceCache(Base):
+    """车价结果持久化缓存（重启后仍生效，避免部署后首批查询全部走慢链路）。"""
+
+    __tablename__ = "price_cache"
+
+    keyword: Mapped[str] = mapped_column(String(64), primary_key=True)
+    payload: Mapped[str] = mapped_column(Text, default="[]")
+    expires_at: Mapped[datetime] = mapped_column(default=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+
+
 class PostReview(Base):
     __tablename__ = "post_reviews"
     __table_args__ = (

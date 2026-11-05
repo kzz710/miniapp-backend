@@ -2,17 +2,19 @@
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy.orm import Session
 
 from app import config
 from app.api import auth as auth_api
 from app.api import posts as posts_api
-from app.db.session import init_db
+from app.db.session import get_db, init_db
 from app.engine import run_plan
 from app.services.car_price import get_car_price
+from app.services.search_stats import HOT_LIMIT, hot_keywords, record_search
 from app.types import CalcParams, CalcResult, CarPriceResult
 
 _STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
@@ -95,10 +97,21 @@ async def health() -> dict:
 
 
 @app.post("/api/queryCarPrice", response_model=CarPriceResult)
-async def query_car_price(body: dict) -> CarPriceResult:
-    """查询车型价格：缓存 -> 实时 RAG -> 示例库兜底。"""
+async def query_car_price(body: dict, db: Session = Depends(get_db)) -> CarPriceResult:
+    """查询车型价格：内存缓存 -> DB 缓存 -> 实时 RAG -> 示例库兜底。"""
     keyword = body.get("keyword", "")
-    return await get_car_price(keyword)
+    try:
+        # 统计失败不能影响主流程（例如新库尚未建表）
+        record_search(db, keyword)
+    except Exception:
+        db.rollback()
+    return await get_car_price(keyword, db)
+
+
+@app.get("/api/hotKeywords")
+def hot_keywords_api(db: Session = Depends(get_db)) -> dict:
+    """热门车型：搜索量前 N，不足用默认车型补齐。"""
+    return {"items": hot_keywords(db, HOT_LIMIT)}
 
 
 @app.post("/api/calcPlan", response_model=CalcResult)
