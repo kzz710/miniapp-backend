@@ -26,7 +26,7 @@ _EXTRACT_PROMPT = (
     '"found": true, '
     '"brand": "品牌", '
     '"model": "车型", '
-    '"source": "价格来源站点或URL", '
+    '"source": "价格来源（只填一个站点名或主URL，60字以内）", '
     '"versions": ['
     "{"
     '"config": "配置/版本名（如 2024款 550km 后驱版）", '
@@ -41,8 +41,8 @@ _EXTRACT_PROMPT = (
     "规则："
     "1) energy_type 必须按版本实际动力类型判断：纯电→ev，纯油→gas，插混/油混→hybrid；"
     "电车 fuel_consumption=0、power_consumption 填百公里电耗(kWh/100km)，油车相反，混动两者都填（油耗时填 L/100km）。"
-    "2) 若用户仅给品牌+车型（如「比亚迪 海豹」）未指定具体版本，列出该车型在售的全部主要版本"
-    "（有多少列多少，不要省略、不要自行截断）；"
+    "2) 若用户仅给品牌+车型（如「比亚迪 海豹」）未指定具体版本，列出该车型在售的主要版本"
+    "（按价格由低到高排列，最多 10 个，优先覆盖不同续航/配置档位）；"
     "若已指定具体版本，则只返回该版本（单个元素）。"
     "3) guide_price 为指导价(万元)，ref_discount_price 为参考优惠价/终端价(万元)；查不到优惠价可等于指导价。"
     "4) 仅输出 JSON，不要任何解释文字。"
@@ -68,6 +68,74 @@ def _coerce_energy(et: str) -> str:
     if "混" in et or "hybrid" in et or "插混" in et or "油混" in et:
         return "hybrid"
     return "gas"
+
+
+def _salvage_versions(text: str) -> list[dict]:
+    """从被截断的 JSON 文本中抢救已经完整的版本对象。
+
+    lite 模型在版本较多时可能把 JSON 输出到一半就被 token 上限截断，
+    此时整体解析必然失败；这里逐个配对 {}，把完整的版本对象取出来。
+    """
+    idx = text.find('"versions"')
+    if idx < 0:
+        return []
+    start = text.find("[", idx)
+    if start < 0:
+        return []
+
+    out: list[dict] = []
+    depth = 0
+    obj_start = -1
+    in_str = False
+    esc = False
+    for i in range(start + 1, len(text)):
+        ch = text[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            if depth == 0:
+                obj_start = i
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0 and obj_start >= 0:
+                try:
+                    obj = json.loads(text[obj_start : i + 1])
+                except Exception:
+                    obj = None
+                if isinstance(obj, dict) and obj.get("config"):
+                    out.append(obj)
+                obj_start = -1
+    return out
+
+
+def _salvage_field(text: str, key: str, fallback: str = "") -> str:
+    """从被截断的 JSON 文本中取出指定字符串字段。"""
+    idx = text.find(f'"{key}"')
+    if idx < 0:
+        return fallback
+    colon = text.find(":", idx)
+    quote = text.find('"', colon + 1) if colon >= 0 else -1
+    if quote < 0:
+        return fallback
+    end = quote + 1
+    while end < len(text):
+        if text[end] == "\\":
+            end += 2
+            continue
+        if text[end] == '"':
+            value = text[quote + 1 : end].strip()
+            return value[:200] or fallback
+        end += 1
+    return fallback
 
 
 def _build_versions(data: dict, fallback_source: str) -> list[CarPrice]:
@@ -115,6 +183,8 @@ def _build_versions(data: dict, fallback_source: str) -> list[CarPrice]:
             continue
         if validate_price(car):
             out.append(car)
+    if raw_versions and not out:
+        print(f"[doubao] {len(raw_versions)} 个版本价格校验均未通过，已丢弃", flush=True)
     return out
 
 
@@ -313,8 +383,20 @@ async def doubao_rag(keyword: str) -> list[CarPrice]:
         return []
     parsed = parse_json_strict(text)
     if not parsed:
-        print(f"[doubao] 模型输出不是合法 JSON：{text[:200]}", flush=True)
-        return []
+        # 输出被 token 上限截断时，尽量把已经完整的版本对象抢救出来
+        salvaged = _salvage_versions(text)
+        if salvaged:
+            print(f"[doubao] 输出被截断，已抢救 {len(salvaged)} 个完整版本", flush=True)
+            parsed = {
+                "found": True,
+                "brand": _salvage_field(text, "brand"),
+                "model": _salvage_field(text, "model"),
+                "versions": salvaged,
+                "source": _salvage_field(text, "source"),
+            }
+        else:
+            print(f"[doubao] 模型输出不是合法 JSON：{text[:200]}", flush=True)
+            return []
     if not parsed.get("found"):
         print(f"[doubao] 模型未找到价格：{text[:200]}", flush=True)
         return []
