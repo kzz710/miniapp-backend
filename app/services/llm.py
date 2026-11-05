@@ -152,7 +152,8 @@ async def deepseek_rag(keyword: str) -> list[CarPrice]:
         print(
             "[警告] 检索后端未就绪（SEARCH_PROVIDER="
             f"{config.SEARCH_PROVIDER}），将使用非实时 mock 片段喂模型，"
-            "价格结果不可靠。请配置 BOCHA_API_KEY 或 TAVILY_API_KEY。"
+            "价格结果不可靠。请配置 BOCHA_API_KEY 或 TAVILY_API_KEY。",
+            flush=True,
         )
 
     # 1) 让模型把查询意图转成搜索词
@@ -246,6 +247,10 @@ async def doubao_rag(keyword: str) -> list[CarPrice]:
     """
     if not config.DOUBAO_API_KEY:
         return []
+    print(
+        f"[doubao] 实时取价：{keyword} | url={config.DOUBAO_BASE_URL}/responses | model={config.DOUBAO_MODEL}",
+        flush=True,
+    )
     payload = {
         "model": config.DOUBAO_MODEL,
         "stream": False,
@@ -280,17 +285,22 @@ async def doubao_rag(keyword: str) -> list[CarPrice]:
                     msg = err.get("message", resp.text)
                 except Exception:
                     code, msg = str(resp.status_code), resp.text
-                print(f"[doubao] 请求失败 HTTP {resp.status_code} | code={code} | {msg}")
+                print(f"[doubao] 请求失败 HTTP {resp.status_code} | code={code} | {msg}", flush=True)
                 return []
             data = resp.json()
     except Exception as e:
-        print(f"[doubao] 请求异常：{e}")
+        print(f"[doubao] 请求异常：{e}", flush=True)
         return None
 
     text = _extract_text_from_responses(data)
     if not text:
+        print("[doubao] 响应中没有 output_text（可能模型未执行联网搜索）", flush=True)
         return []
     parsed = parse_json_strict(text)
-    if not parsed or not parsed.get("found"):
+    if not parsed:
+        print(f"[doubao] 模型输出不是合法 JSON：{text[:200]}", flush=True)
+        return []
+    if not parsed.get("found"):
+        print(f"[doubao] 模型未找到价格：{text[:200]}", flush=True)
         return []
     return _build_versions(parsed, parsed.get("source") or "")

@@ -23,7 +23,7 @@ def _check_secrets() -> None:
     if config.JWT_SECRET != config.DEFAULT_JWT_SECRET:
         return
     if config.WX_MOCK_LOGIN or not (config.WX_APPID and config.WX_SECRET):
-        print("[警告] JWT_SECRET 仍为默认值，仅限本地开发；生产必须配置随机密钥")
+        print("[警告] JWT_SECRET 仍为默认值，仅限本地开发；生产必须配置随机密钥", flush=True)
         return
     raise RuntimeError(
         "JWT_SECRET 仍为默认值，拒绝启动：请配置随机密钥（如 openssl rand -hex 32）"
@@ -32,13 +32,17 @@ def _check_secrets() -> None:
 
 async def lifespan(app: FastAPI):
     _check_secrets()
-    print(f"[启动] LLM 来源：{config.llm_label()}")
+    print(f"[启动] LLM 来源：{config.llm_label()}", flush=True)
+    print(
+        f"[启动] 豆包通道：base_url={config.DOUBAO_BASE_URL} model={config.DOUBAO_MODEL}",
+        flush=True,
+    )
     if config.LLM_PROVIDER == "deepseek":
-        print(f"[启动] 检索来源(搜索)：{config.search_label()}")
+        print(f"[启动] 检索来源(搜索)：{config.search_label()}", flush=True)
     if config.WX_MOCK_LOGIN or not (config.WX_APPID and config.WX_SECRET):
-        print("[启动] 微信登录：mock 模式（生产环境请配置 WX_APPID / WX_SECRET）")
+        print("[启动] 微信登录：mock 模式（生产环境请配置 WX_APPID / WX_SECRET）", flush=True)
     init_db()
-    print(f"[启动] 数据库：{config.DATABASE_URL}")
+    print(f"[启动] 数据库：{config.DATABASE_URL}", flush=True)
     yield
 
 

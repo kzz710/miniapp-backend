@@ -7,6 +7,8 @@ User=root
 WorkingDirectory=/opt/miniapp-backend
 # venv 的 gunicorn 绝对路径（确保开机自启时 PATH 正确）
 Environment="PATH=/opt/miniapp-backend/.venv/bin"
+# 关闭 Python 输出缓冲，确保启动/报错日志能立即写入 journal
+Environment="PYTHONUNBUFFERED=1"
 # 密钥文件放在项目目录之外，仅 root 可读（chmod 600），避免随代码一起被提交/打包
 EnvironmentFile=/etc/miniapp/miniapp.env
 # 使用 SQLite 时请保持 -w 1（多 worker 会争抢写锁）；切换 MySQL 后可调回 -w 2
