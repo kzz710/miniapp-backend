@@ -50,11 +50,11 @@ _EXTRACT_PROMPT = (
 )
 
 
-async def fetch_live_prices(keyword: str, timeout: int = 50) -> list[CarPrice]:
+async def fetch_live_prices(keyword: str, timeout: int = 15) -> list[CarPrice]:
     """统一入口：按 LLM_PROVIDER 分派，返回该车型全部版本（可能为空）。
 
-    timeout 仅对豆包通道生效：线上查询保持 50s（早于前端 60s 收口），
-    后台预热可传更大值（如 120s）以提升成功率。
+    timeout 仅对豆包通道生效：线上同步默认 15s（避免干等 30–50s），
+    后台预热可传更大值（如 120/180s）以提升成功率。
     """
     if config.LLM_PROVIDER == "doubao":
         return await doubao_rag(keyword, timeout=timeout)
@@ -312,7 +312,7 @@ def _extract_text_from_responses(data: dict) -> str:
     return "\n".join(texts)
 
 
-async def doubao_rag(keyword: str, timeout: int = 50) -> list[CarPrice]:
+async def doubao_rag(keyword: str, timeout: int = 15) -> list[CarPrice]:
     """豆包（火山方舟 Responses API）内置 web_search 联网搜索 + 抽取。
 
     注意：方舟原生 web_search 工具要求
@@ -331,8 +331,8 @@ async def doubao_rag(keyword: str, timeout: int = 50) -> list[CarPrice]:
         "stream": False,
         # 返回全部版本后 JSON 更长，输出上限过小会把 JSON 截断导致解析失败
         "max_output_tokens": 16384,
-        # 搜索轮次过多会显著拉长响应时间，2 轮可覆盖主流车型
-        "tools": [{"type": "web_search", "max_keyword": 2}],
+        # 搜索轮次过多会显著拉长响应时间；线上优先 1 轮控时延
+        "tools": [{"type": "web_search", "max_keyword": 1}],
         "input": [
             {
                 "role": "user",
@@ -346,7 +346,7 @@ async def doubao_rag(keyword: str, timeout: int = 50) -> list[CarPrice]:
         ],
     }
     data = None
-    # 线上查询默认 50s（早于小程序端 60s 收口）；后台预热可传更大值
+    # 线上同步默认 15s；后台预热可传更大值
     async with httpx.AsyncClient(timeout=timeout) as client:
         for attempt in range(2):
             try:
@@ -360,7 +360,7 @@ async def doubao_rag(keyword: str, timeout: int = 50) -> list[CarPrice]:
                 )
             except Exception as e:
                 print(f"[doubao] 请求异常：{type(e).__name__}: {e}", flush=True)
-                return None
+                return []
             # 5xx 为方舟侧偶发错误，快速重试一次；4xx（鉴权/参数）重试无意义
             if resp.status_code >= 500 and attempt == 0:
                 print(f"[doubao] 上游 {resp.status_code}，重试一次", flush=True)

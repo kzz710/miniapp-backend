@@ -25,23 +25,38 @@ def all_samples() -> List[tuple]:
     return list(_SAMPLE)
 
 
+def _to_car(brand, model, config, guide, discount, energy_type, fuel_c, power_c) -> CarPrice:
+    return CarPrice(
+        car_id=slugify(f"{brand}-{model}-{config}"),
+        brand=brand,
+        model=model,
+        config=config,
+        guide_price=guide,
+        ref_discount_price=discount,
+        energy_type=energy_type,
+        fuel_consumption=fuel_c,
+        power_consumption=power_c,
+        source="内置示例库（参考值）",
+        fetched_at=now_iso(),
+    )
+
+
 def find_sample(keyword: str) -> Optional[CarPrice]:
-    """按关键词（品牌或车型子串）模糊匹配示例库。"""
+    """品牌+车型双约束匹配示例库。
+
+    - 优先：关键词同时包含品牌与车型（防「比亚迪 汉」误配「海豹」）。
+    - 其次：仅车型命中且全库唯一（允许只搜「海豹」）；禁止仅品牌命中。
+    """
     if not keyword:
         return None
-    for brand, model, config, guide, discount, energy_type, fuel_c, power_c in _SAMPLE:
-        if brand in keyword or model in keyword:
-            return CarPrice(
-                car_id=slugify(f"{brand}-{model}-{config}"),
-                brand=brand,
-                model=model,
-                config=config,
-                guide_price=guide,
-                ref_discount_price=discount,
-                energy_type=energy_type,
-                fuel_consumption=fuel_c,
-                power_consumption=power_c,
-                source="内置示例库（参考值）",
-                fetched_at=now_iso(),
-            )
+    kw = keyword.strip()
+
+    both = [row for row in _SAMPLE if row[0] in kw and row[1] in kw]
+    if both:
+        return _to_car(*both[0])
+
+    model_hits = [row for row in _SAMPLE if row[1] in kw]
+    if len(model_hits) == 1:
+        return _to_car(*model_hits[0])
+
     return None

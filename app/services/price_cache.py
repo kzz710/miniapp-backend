@@ -14,16 +14,26 @@ from app.types import CarPrice
 
 
 def get_cached(db: Session, keyword: str) -> list[CarPrice] | None:
-    """读取未过期的缓存；过期记录顺手删除。"""
+    """读取未过期的缓存；过期不删，留给 get_stale_cached 作降级。"""
     row = db.get(PriceCache, keyword)
     if row is None:
         return None
 
     if row.expires_at <= utcnow():
-        db.delete(row)
-        db.commit()
         return None
 
+    try:
+        raw = json.loads(row.payload)
+        return [CarPrice(**item) for item in raw]
+    except Exception:
+        return None
+
+
+def get_stale_cached(db: Session, keyword: str) -> list[CarPrice] | None:
+    """读取库里已有缓存（含过期），供 live 超时后立刻返回。"""
+    row = db.get(PriceCache, keyword)
+    if row is None:
+        return None
     try:
         raw = json.loads(row.payload)
         return [CarPrice(**item) for item in raw]

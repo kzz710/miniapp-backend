@@ -107,13 +107,17 @@ async def query_car_price(body: dict, db: Session = Depends(get_db)) -> CarPrice
         db.rollback()
 
     result = await get_car_price(keyword, db)
-    # 本次没拿到实时价（超时/未收录）时，后台继续取价并写缓存，下次查询即可秒回
-    if config.live_mode() and result.source in ("sample", "none"):
+    # 本次没拿到新鲜 live 时，后台继续取价并写缓存（含 sample/none/过期 cache）
+    if config.live_mode() and (
+        result.source in ("sample", "none")
+        or (result.source == "cache" and result.is_reference)
+    ):
         schedule_refresh(keyword)
         if result.source == "none":
             result.note = "正在后台继续查询该车型，约 1 分钟后再次查询可获取最新报价"
-        else:
+        elif result.source == "sample":
             result.note = "正在后台更新最新报价，稍后再次查询可获得实时价"
+        # cache+is_reference 已在 get_car_price 写好 note
     return result
 
 
