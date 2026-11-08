@@ -1,4 +1,4 @@
-"""车价查询编排：内存缓存 -> 数据库缓存 -> 实时 RAG -> 过期缓存/示例库兜底。"""
+﻿"""车价查询编排：内存缓存 -> 数据库缓存 -> 实时 RAG -> 过期缓存/示例库兜底。"""
 import asyncio
 
 from sqlalchemy.orm import Session
@@ -13,8 +13,8 @@ from app.types import CarPrice, CarPriceResult
 from app.utils.cache import cache
 from app.utils.validate import validate_price
 
-# 线上同步等待上限：早于小程序 60s，避免干等 30–50s
-DEFAULT_LIVE_TIMEOUT = 15
+# 线上同步等待上限：默认 14s，墙钟目标 ≤15s（含框架开销）
+DEFAULT_LIVE_TIMEOUT = 14
 
 
 async def get_car_price(
@@ -56,7 +56,7 @@ async def get_car_price(
         try:
             cars = await asyncio.wait_for(
                 fetch_live_prices(kw, timeout=live_timeout),
-                timeout=live_timeout + 1,
+                timeout=live_timeout,
             ) or []
         except asyncio.TimeoutError:
             print(f"[car_price] live 超时 {live_timeout}s：{kw}", flush=True)

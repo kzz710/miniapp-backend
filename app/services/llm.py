@@ -1,4 +1,4 @@
-"""LLM 接入：车型检索增强(RAG) + 结构化价格抽取。
+﻿"""LLM 接入：车型检索增强(RAG) + 结构化价格抽取。
 
 支持两种后端（由 LLM_PROVIDER 切换）：
 - deepseek：OpenAI 兼容 chat/completions，需配合外部搜索源（Bocha/Tavily）。
@@ -50,10 +50,10 @@ _EXTRACT_PROMPT = (
 )
 
 
-async def fetch_live_prices(keyword: str, timeout: int = 15) -> list[CarPrice]:
+async def fetch_live_prices(keyword: str, timeout: int = 14) -> list[CarPrice]:
     """统一入口：按 LLM_PROVIDER 分派，返回该车型全部版本（可能为空）。
 
-    timeout 仅对豆包通道生效：线上同步默认 15s（避免干等 30–50s），
+    timeout 仅对豆包通道生效：线上同步默认 14s（避免干等 30–50s），
     后台预热可传更大值（如 120/180s）以提升成功率。
     """
     if config.LLM_PROVIDER == "doubao":
@@ -312,7 +312,7 @@ def _extract_text_from_responses(data: dict) -> str:
     return "\n".join(texts)
 
 
-async def doubao_rag(keyword: str, timeout: int = 15) -> list[CarPrice]:
+async def doubao_rag(keyword: str, timeout: int = 14) -> list[CarPrice]:
     """豆包（火山方舟 Responses API）内置 web_search 联网搜索 + 抽取。
 
     注意：方舟原生 web_search 工具要求
@@ -346,7 +346,7 @@ async def doubao_rag(keyword: str, timeout: int = 15) -> list[CarPrice]:
         ],
     }
     data = None
-    # 线上同步默认 15s；后台预热可传更大值
+    # 线上同步默认 14s；后台预热可传更大值
     async with httpx.AsyncClient(timeout=timeout) as client:
         for attempt in range(2):
             try:
