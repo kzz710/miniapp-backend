@@ -110,7 +110,7 @@ def test_rename_validation_and_auth_required():
 
     assert client.get("/api/users/me").status_code == 401
     assert client.post("/api/posts", json=post_payload()).status_code == 401
-    assert client.post("/api/posts/1/reviews", json={"decision": "buy", "comment": "未登录不允许审批"}).status_code == 401
+    assert client.post("/api/posts/1/reviews", json={"decision": "buy", "tags": ["high_payment"]}).status_code == 401
 
 
 def test_publish_and_square_list():
@@ -136,25 +136,26 @@ def test_review_flow_and_self_review_forbidden():
 
     own = client.post(
         f"/api/posts/{post['id']}/reviews",
-        json={"decision": "buy", "comment": "自己给自己审批应该被拒绝"},
+        json={"decision": "buy", "tags": ["high_payment"]},
         headers=author_headers,
     )
     assert own.status_code == 403
 
     review = client.post(
         f"/api/posts/{post['id']}/reviews",
-        json={"decision": "consider", "comment": "月供占比偏高，建议再多攒点首付"},
+        json={"decision": "consider", "tags": ["high_payment", "save_more"]},
         headers=reviewer_headers,
     )
     assert review.status_code == 200, review.text
     body = review.json()
     assert body["review_count"] == 1
     assert body["consider_count"] == 1
+    assert body["my_review"]["tags"] == ["high_payment", "save_more"]
 
     # 修改审批：计数不重复累加
     updated = client.put(
         f"/api/posts/{post['id']}/reviews/me",
-        json={"decision": "avoid", "comment": "收入不稳定的话不建议硬上"},
+        json={"decision": "avoid", "tags": ["high_cost"]},
         headers=reviewer_headers,
     )
     assert updated.status_code == 200
@@ -164,6 +165,48 @@ def test_review_flow_and_self_review_forbidden():
 
     detail = client.get(f"/api/posts/{post['id']}")
     assert detail.json()["review_count"] == 1
+
+
+def test_review_requires_preset_tags():
+    _, author_headers = login("tag-author")
+    _, reviewer_headers = login("tag-reviewer")
+    post = client.post("/api/posts", json=post_payload(), headers=author_headers).json()
+
+    empty = client.post(
+        f"/api/posts/{post['id']}/reviews",
+        json={"decision": "consider", "tags": []},
+        headers=reviewer_headers,
+    )
+    assert empty.status_code == 400
+
+    invalid = client.post(
+        f"/api/posts/{post['id']}/reviews",
+        json={"decision": "consider", "tags": ["free_text"]},
+        headers=reviewer_headers,
+    )
+    assert invalid.status_code == 400
+
+    too_many = client.post(
+        f"/api/posts/{post['id']}/reviews",
+        json={
+            "decision": "consider",
+            "tags": ["high_payment", "low_down", "high_cost", "negotiate"],
+        },
+        headers=reviewer_headers,
+    )
+    assert too_many.status_code in (400, 422)
+
+
+def test_publish_ignores_remark():
+    _, headers = login("remark-ignore")
+    payload = post_payload()
+    payload["remark"] = "用户自由输入不应落库"
+
+    post = client.post("/api/posts", json=payload, headers=headers).json()
+    assert post["remark"] is None
+
+    detail = client.get(f"/api/posts/{post['id']}").json()
+    assert detail["remark"] is None
 
 
 def test_delete_only_by_owner():

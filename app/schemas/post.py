@@ -22,6 +22,7 @@ class CarSnapshot(BaseModel):
 class PostCreate(BaseModel):
     car: CarSnapshot
     plan: CalcParams
+    # 审核期不接收用户补充说明：字段保留仅为兼容旧客户端，服务端一律忽略
     remark: str | None = Field(None, max_length=200)
     show_finance: bool = False
 
@@ -43,14 +44,18 @@ class FinanceOut(BaseModel):
 
 class ReviewCreate(BaseModel):
     decision: VerdictLike
-    comment: str = Field(..., min_length=10, max_length=200, description="审批意见（10~200 字）")
+    # 标签为预设白名单，最多 3 个；不再接收自由文本
+    tags: list[str] = Field(default_factory=list, max_length=3)
+    # 兼容旧客户端：即使传入也会被忽略
+    comment: str | None = Field(None, max_length=200)
 
 
 class ReviewOut(BaseModel):
     id: int
     decision: str
     decision_text: str
-    comment: str
+    tags: list[str] = Field(default_factory=list)
+    comment: str = ""
     author: AuthorOut
     created_at: str | None = None
 
@@ -66,6 +71,7 @@ class ReviewSubmitOut(BaseModel):
 class PostListItem(BaseModel):
     id: int
     title: str
+    # 审核期不再返回用户补充说明（历史数据也不透出）
     remark: str | None = None
     car_brand: str
     car_model: str

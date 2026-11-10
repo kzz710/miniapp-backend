@@ -15,10 +15,10 @@ from app.schemas.post import (
     PostListItem,
     ReviewOut,
 )
+from app.services.review_tags import parse_tags
 from app.utils.helpers import start_of_today_cn_utc
 
 DECISION_TEXT = {"buy": "买买买", "consider": "理性考虑", "avoid": "买个 der"}
-_AD_WORDS = ("加微信", "代开发票", "博彩", "赌博", "刷单", "返利")
 
 
 def author_out(user: User) -> AuthorOut:
@@ -42,6 +42,7 @@ def review_out(review: PostReview, author: User | None) -> ReviewOut:
         id=review.id,
         decision=review.decision,
         decision_text=DECISION_TEXT.get(review.decision, review.decision),
+        tags=parse_tags(review.comment),
         comment=review.comment,
         author=author_out(author)
         if author
@@ -66,7 +67,8 @@ def _base_fields(post: CarPost, author: User | None, viewer_id: int | None) -> d
     return {
         "id": post.id,
         "title": post.title,
-        "remark": post.remark,
+        # 审核期不透出用户补充说明
+        "remark": None,
         "car_brand": post.car_brand,
         "car_model": post.car_model,
         "car_config": post.car_config,
@@ -98,12 +100,6 @@ def _build_title(car_brand: str, car_model: str, price: float) -> str:
     return title[:80]
 
 
-def contains_ad(text: str | None) -> bool:
-    if not text:
-        return False
-    return any(word in text for word in _AD_WORDS)
-
-
 def create_post(db: Session, user: User, payload: PostCreate) -> PostDetail:
     # 日限流按「当日创建总量」统计（不区分是否已删除），避免删了再发绕过上限
     today = db.scalar(
@@ -118,9 +114,8 @@ def create_post(db: Session, user: User, payload: PostCreate) -> PostDetail:
             detail=f"每天最多发布 {config.POST_DAILY_LIMIT} 条，明天再来吧",
         )
 
-    remark = (payload.remark or "").strip() or None
-    if remark and contains_ad(remark):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="内容包含违规信息，请修改后重试")
+    # 审核期：不接受任何用户补充说明，字段一律置空（旧客户端传入也忽略）
+    remark = None
 
     car = payload.car
     result = run_plan(payload.plan)

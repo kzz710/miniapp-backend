@@ -8,7 +8,8 @@ from app import config
 from app.db.models import CarPost, PostReview, User
 from app.schemas.common import PageResult
 from app.schemas.post import ReviewCreate, ReviewOut, ReviewSubmitOut
-from app.services.post_service import contains_ad, review_out
+from app.services.post_service import review_out
+from app.services.review_tags import normalize_tags, tags_to_text
 from app.utils.helpers import start_of_today_cn_utc
 
 DECISIONS = ("buy", "consider", "avoid")
@@ -36,11 +37,14 @@ def upsert_review(db: Session, post: CarPost, user: User, payload: ReviewCreate)
     if post.user_id == user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="不能审批自己的发布")
 
-    comment = payload.comment.strip()
-    if len(comment) < 10 or len(comment) > 200:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="审批意见需为 10~200 字")
-    if contains_ad(comment):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="意见包含违规信息，请修改后重试")
+    # 只接受预设标签，任何自由文本（payload.comment）一律忽略
+    tags = normalize_tags(payload.tags)
+    if not tags:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="请至少选择一个评价标签",
+        )
+    comment = tags_to_text(tags)
 
     post_id = post.id
     existing = db.scalar(
