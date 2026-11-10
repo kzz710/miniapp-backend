@@ -43,7 +43,8 @@ def review_out(review: PostReview, author: User | None) -> ReviewOut:
         decision=review.decision,
         decision_text=DECISION_TEXT.get(review.decision, review.decision),
         tags=parse_tags(review.comment),
-        comment=review.comment,
+        # 审核期不透出历史自由文本，只返回结构化标签
+        comment="",
         author=author_out(author)
         if author
         else AuthorOut(user_id="U0", username="已注销用户", avatar_text="?", avatar_color="#9AA0AE"),
