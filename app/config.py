@@ -9,8 +9,8 @@ load_dotenv()
 def _env(name: str, default: str = "") -> str:
     """读取字符串配置并去除首尾空白。
 
-    Windows 上编辑/复制得到的 env 文件常带 CRLF，systemd EnvironmentFile 会把 \\r
-    原样注入，导致 API Key 变成 "ark-xxxx\\r" 并报 key format is incorrect。
+    Windows 上编辑/复制得到的 env 文件常带 CRLF，systemd EnvironmentFile 会把 \r
+    原样注入，导致 API Key 变成 "ark-xxxx\r" 并报 key format is incorrect。
     """
     return os.getenv(name, default).strip()
 
@@ -55,6 +55,7 @@ PORT = _env_int("PORT", 8000)
 DEFAULT_SAFE_RATIO = 0.3
 
 # ---------------- 用户系统 ----------------
+# 各端 Secret 只来自环境变量（本机 .env 或服务器 EnvironmentFile），切勿写进源码或 git。
 # 微信小程序登录（code2session）。未配置时仅 mock 登录可用。
 WX_APPID = _env("WX_APPID")
 WX_SECRET = _env("WX_SECRET")
@@ -63,6 +64,79 @@ WX_SECRET = _env("WX_SECRET")
 # 小程序 wx.login 的 code 每次都不同，若想让本地始终登录同一账号，可设置 WX_MOCK_OPENID。
 WX_MOCK_LOGIN = _env("WX_MOCK_LOGIN", "false").lower() == "true"
 WX_MOCK_OPENID = _env("WX_MOCK_OPENID")
+
+# 抖音 / 快手 / 百度小程序登录。百度 BD_APPID 应对控制台 AppKey（换票参数 client_id），数字 AppID 尚未核对。
+TT_APPID = _env("TT_APPID")
+TT_SECRET = _env("TT_SECRET")
+TT_MOCK_LOGIN = _env("TT_MOCK_LOGIN", "false").lower() == "true"
+TT_MOCK_OPENID = _env("TT_MOCK_OPENID")
+
+KS_APPID = _env("KS_APPID")
+KS_SECRET = _env("KS_SECRET")
+KS_MOCK_LOGIN = _env("KS_MOCK_LOGIN", "false").lower() == "true"
+KS_MOCK_OPENID = _env("KS_MOCK_OPENID")
+
+BD_APPID = _env("BD_APPID")
+BD_SECRET = _env("BD_SECRET")
+BD_MOCK_LOGIN = _env("BD_MOCK_LOGIN", "false").lower() == "true"
+BD_MOCK_OPENID = _env("BD_MOCK_OPENID")
+
+LOGIN_PLATFORMS = ("weixin", "toutiao", "kuaishou", "baidu")
+PLATFORM_LABELS = {
+    "weixin": "微信",
+    "toutiao": "抖音",
+    "kuaishou": "快手",
+    "baidu": "百度",
+}
+
+
+def platform_auth(platform: str) -> dict:
+    """返回某端的 AppID / Secret / mock 开关。不含密钥打印，仅供登录换票使用。"""
+    mapping = {
+        "weixin": (WX_APPID, WX_SECRET, WX_MOCK_LOGIN, WX_MOCK_OPENID),
+        "toutiao": (TT_APPID, TT_SECRET, TT_MOCK_LOGIN, TT_MOCK_OPENID),
+        "kuaishou": (KS_APPID, KS_SECRET, KS_MOCK_LOGIN, KS_MOCK_OPENID),
+        "baidu": (BD_APPID, BD_SECRET, BD_MOCK_LOGIN, BD_MOCK_OPENID),
+    }
+    appid, secret, mock_login, mock_openid = mapping[platform]
+    return {
+        "appid": appid,
+        "secret": secret,
+        "mock_login": mock_login,
+        "mock_openid": mock_openid,
+        "configured": bool(appid and secret),
+    }
+
+
+def uses_mock_login(platform: str) -> bool:
+    """是否走 mock 换票：显式开关，或未配密钥时的可切换降级。
+
+    - 该端 *_MOCK_LOGIN=true：强制 mock。
+    - 微信未配 AppID/Secret：沿用现网，自动 mock（仅限开发）。
+    - 其他端未配密钥：JWT 仍为默认值时自动 mock；已换生产 JWT 时不 mock，由调用方返回「未配置」。
+    """
+    auth = platform_auth(platform)
+    if auth["mock_login"]:
+        return True
+    if auth["configured"]:
+        return False
+    if platform == "weixin":
+        return True
+    return JWT_SECRET == DEFAULT_JWT_SECRET
+
+
+def login_status_label(platform: str) -> str:
+    """启动日志用，不输出任何密钥值。"""
+    label = PLATFORM_LABELS[platform]
+    auth = platform_auth(platform)
+    if auth["mock_login"]:
+        return f"{label}登录：显式 mock"
+    if auth["configured"]:
+        return f"{label}登录：已配置换票"
+    if uses_mock_login(platform):
+        return f"{label}登录：未配置密钥，已降级 mock（仅限开发）"
+    return f"{label}登录：未配置密钥（该端登录将返回未配置）"
+
 
 # JWT 签名密钥（生产必须替换为随机值；启动时会校验是否仍为默认值）
 DEFAULT_JWT_SECRET = "dev-only-change-me-in-production"

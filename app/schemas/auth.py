@@ -3,7 +3,13 @@ from pydantic import BaseModel, Field
 
 
 class LoginRequest(BaseModel):
-    code: str = Field(..., min_length=1, max_length=128, description="wx.login 返回的 code")
+    code: str = Field(..., min_length=1, max_length=128, description="uni.login 返回的 code")
+    # 缺省或空字符串由服务层按 weixin 处理，非法值返回 400（不用枚举以免变成 422）
+    platform: str | None = Field(
+        default=None,
+        max_length=32,
+        description="登录平台：weixin / toutiao / kuaishou / baidu，缺省为 weixin",
+    )
 
 
 class H5LoginRequest(BaseModel):

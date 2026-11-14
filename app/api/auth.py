@@ -42,9 +42,12 @@ async def login(
     request: Request,
     db: Session = Depends(get_db),
 ) -> LoginResponse:
-    """微信 code 换取登录态；首次登录自动分配用户名与文字头像。"""
+    """按平台 code 换取登录态；首次登录自动分配用户名与文字头像。
+
+    platform 缺省或空字符串按微信处理，与现网只传 code 的包兼容。
+    """
     _guard_login_rate(request)
-    user = await auth_service.login(db, body.code)
+    user = await auth_service.login(db, body.code, body.platform)
     return _login_response(user)
 
 

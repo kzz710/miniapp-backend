@@ -14,10 +14,16 @@ def utcnow() -> datetime:
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (
+        UniqueConstraint("platform", "openid", name="uk_users_platform_openid"),
+        Index("ix_users_platform", "platform"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    openid: Mapped[str] = mapped_column(String(64), unique=True, index=True)
-    unionid: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    openid: Mapped[str] = mapped_column(String(128), index=True)
+    unionid: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # weixin / toutiao / kuaishou / baidu；H5 匿名登录为 h5（本轮不改 H5 接口）
+    platform: Mapped[str] = mapped_column(String(16), default="weixin")
     username: Mapped[str] = mapped_column(String(32), unique=True, index=True)
     avatar_text: Mapped[str] = mapped_column(String(4))
     avatar_color: Mapped[str] = mapped_column(String(7))

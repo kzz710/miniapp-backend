@@ -56,5 +56,7 @@ def get_db() -> Generator[Session, None, None]:
 def init_db() -> None:
     """建表（MVP 用；生产改用 Alembic 迁移）。"""
     import app.db.models  # noqa: F401  确保模型已注册
+    from app.db.migrate import migrate_users_platform
 
     Base.metadata.create_all(bind=engine)
+    migrate_users_platform(engine)

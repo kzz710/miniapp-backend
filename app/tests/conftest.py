@@ -15,6 +15,11 @@ from app.utils.cache import cache
 app_config.LLM_PROVIDER = "deepseek"
 app_config.DEEPSEEK_API_KEY = ""
 app_config.LOGIN_RATE_LIMIT_PER_MINUTE = 0
+# 测试默认走 mock 换票，避免本机 .env 里的真实密钥把登录请求打到官方接口
+app_config.WX_MOCK_LOGIN = True
+app_config.TT_MOCK_LOGIN = True
+app_config.KS_MOCK_LOGIN = True
+app_config.BD_MOCK_LOGIN = True
 
 engine = create_engine(
     "sqlite://",

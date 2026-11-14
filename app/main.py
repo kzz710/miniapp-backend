@@ -41,8 +41,8 @@ async def lifespan(app: FastAPI):
     )
     if config.LLM_PROVIDER == "deepseek":
         print(f"[启动] 检索来源(搜索)：{config.search_label()}", flush=True)
-    if config.WX_MOCK_LOGIN or not (config.WX_APPID and config.WX_SECRET):
-        print("[启动] 微信登录：mock 模式（生产环境请配置 WX_APPID / WX_SECRET）", flush=True)
+    for _platform in config.LOGIN_PLATFORMS:
+        print(f"[启动] {config.login_status_label(_platform)}", flush=True)
     init_db()
     print(f"[启动] 数据库：{config.DATABASE_URL}", flush=True)
     yield
